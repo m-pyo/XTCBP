@@ -1,8 +1,8 @@
-from numpy import NaN
 import pandas as pd
 import os
 import glob
 import datetime
+import openpyxl
 
 from distutils.dir_util import copy_tree
 
@@ -30,6 +30,9 @@ SKIP_ROWS = 2  # 차량 정보 취득시 생략하는 라인수
 
 #설정파일관련
 SET_FILE = './変換設定.xlsx'
+
+#로그파일 관련
+LOGS_PATH = './logs'
 
 def getSetData() -> dict:
     """설정파일의 내용을 취득
@@ -75,7 +78,7 @@ def getXlsxFileList(folderName: str) -> list:
     try:
         result = [fileName for fileName in os.listdir(path) if fileName.endswith('.xlsx')] 
     except:
-        print('처리실패:' +  folderName)
+        printLog('処理失敗:' +  folderName)
         result = []
         
     return result 
@@ -92,7 +95,8 @@ def getFilePath(folderName:str, extension:str = "" ) -> list:
     """
     
     path = f'{XLSX_PATH}/{folderName}/'
-    return [path for path in glob.glob(path + extension, recursive = True) if os.path.isfile(path)] 
+    return [path.replace('\\','/') for path in glob.glob(path + extension, recursive = True) 
+            if os.path.isfile(path)] 
 
 
 def getSheetList(folderName: str, fileName: str) -> list:
@@ -159,7 +163,8 @@ def createOriginalDir() -> bool:
         CSV_PATH + '/' + USED_CAR_FOLDER,
         CSV_PATH + '/' + NEW_CAR_FOLDER,
         CSV_PATH + '/' + GOONET_FOLDER,
-        IMAGE_PATH
+        IMAGE_PATH,
+        LOGS_PATH
     ]
     
     try: 
@@ -169,7 +174,16 @@ def createOriginalDir() -> bool:
         return True
     except:
         return False
-  
+    
+def printLog(msg: str) -> None:
+    
+    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    logTime = f'[{now}] '
+    f = open(f'{LOGS_PATH}/{RUN_DATE}.txt', 'a')
+    f.write(logTime + msg + '\n')
+    f.close()
+
+
  
 def getXlsxData(path: str) -> dict:
     """xlsx 데이터 취득
@@ -247,15 +261,15 @@ def beforeXlsxCheck(fileList: list, companyIds: dict) -> bool:
     """
     
     if len(companyIds) == 0:
-        print('処理失敗[未登録会社]：' + folderName + '/' + ','.join(fileList[:])) 
+        printLog('処理失敗[未登録会社]：' + folderName + '/' + ','.join(fileList[:])) 
         return True
     
     if len(fileList) == 0 or len(fileList) > 3:
-        print('処理失敗[xlsxファイル確認必要]：' + folderName + '/' + ','.join(fileList[:])) 
+        printLog('処理失敗[xlsxファイル確認必要]：' + folderName + '/' + ','.join(fileList[:])) 
         return True
         
     elif len(fileList) != len(companyIds) :
-        print('処理失敗[xlsxファイル件数相違]：' + folderName + '/' + ','.join(fileList[:])) 
+        printLog('処理失敗[xlsxファイル件数相違]：' + folderName + '/' + ','.join(fileList[:])) 
         return True
 
     return False
@@ -312,7 +326,7 @@ def imageCopy(folderName, companyId, fileType):
         pathLists = ['/'.join(item.split('/')[:-1]) for item in imageList]
         pathListSet = set(pathLists)
         if len(pathListSet) > 1:
-            print('処理失敗[イメージパス修復（車輌ID）]：' + ' '.join(pathListSet)) 
+            printLog('処理失敗[イメージパス修復（車輌ID）]：' + ' '.join(pathListSet)) 
             continue
         
         copy_tree(pathLists[0], f'{IMAGE_PATH}/{companyId}/{client}/{carId}')
@@ -320,7 +334,7 @@ def imageCopy(folderName, companyId, fileType):
 # 메인로직 
 if __name__ == "__main__":
     
-    print('start')
+    print('START!')
     createOriginalDir()
     
     for folderName in getFolderList():
@@ -358,13 +372,18 @@ if __name__ == "__main__":
                         companyId = companyIds[fileType]
                         xlsxPath = getXlsxFilePath(folderName,fileName)
                     else:
-                        print('処理失敗[xlsxファイル名中古新車なし]：' + fileName) 
+                        printLog('処理失敗[xlsxファイル名中古新車なし]：' + fileName) 
                         continue 
                     
                     createCsv(xlsxPath, getTypeToFolder(fileType), companyId)
                     imageCopy(folderName, companyId, fileType)
                
         except:
-            print('処理失敗[設定・その他エラー]：' + folderName) 
+            printLog('処理失敗[設定・その他エラー]：' + folderName) 
+        
+        print('END')
+        os.system('Pause')
+
+
                     
     
