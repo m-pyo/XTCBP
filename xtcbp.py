@@ -1,8 +1,10 @@
-import csv
+from numpy import NaN
 import pandas as pd
 import os
 import glob
 import datetime
+
+from distutils.dir_util import copy_tree
 
 #대상파일 위치
 XLSX_PATH = './xlsxFiles'
@@ -16,10 +18,15 @@ USED_CAR_FOLDER = 'UsedCar'
 NEW_CAR_FOLDER = 'NewCar'
 GOONET_FOLDER = 'Goonet'
 
+USED_CAR_TYPE = 1
+NEW_CAR_TYPE = 2
+GOONET_TYPE = 3
+
 CSV_STORE_FILE_NAME = '_store'
 CSV_PLAN_FILE_NAME = '_plan'
 CSV_CAR_FILE_NAME = '_car'
 
+SKIP_ROWS = 2  # 차량 정보 취득시 생략하는 라인수
 
 #설정파일관련
 SET_FILE = './変換設定.xlsx'
@@ -85,7 +92,7 @@ def getFilePath(folderName:str, extension:str = "" ) -> list:
     """
     
     path = f'{XLSX_PATH}/{folderName}/'
-    return [path for path in glob.glob(path + extension) if os.path.isfile(path)] 
+    return [path for path in glob.glob(path + extension, recursive = True) if os.path.isfile(path)] 
 
 
 def getSheetList(folderName: str, fileName: str) -> list:
@@ -190,6 +197,44 @@ def getXlsxFilePath(fdn: str, fn: str) -> str:
     
     return f'{XLSX_PATH}/{fdn}/{fn}'
 
+def getXlsxFolderPath(fdn: str) -> str:
+    """폴더 경로 반환
+    
+    Args:
+        fdn: 폴더명
+        
+    Returns:
+        파일경로
+    """
+    
+    return f'{XLSX_PATH}/{fdn}'
+
+def getXlsxFilePath(fdn: str, fn: str) -> str:
+    """xlsx 파일 경로 반환
+    
+    Args:
+        fdn: 폴더명
+        fn: 파일명
+        
+    Returns:
+        파일경로
+    """
+    
+    return f'{XLSX_PATH}/{fdn}/{fn}'
+
+def getCsvFilePath(fdn: str,fn: str) -> str:
+    """폴더 경로 반환
+    
+    Args:
+        fdn: 폴더명
+        
+    Returns:
+        파일경로
+    """
+    
+    return f'{CSV_PATH}/{fdn}/{fn}'
+
+
 def beforeXlsxCheck(fileList: list, companyIds: dict) -> bool:
     """변환전 xlsx파일 설정과 xlsx파일 개수, 논리확인
     
@@ -217,13 +262,13 @@ def beforeXlsxCheck(fileList: list, companyIds: dict) -> bool:
 
 
 # CSV파일생성
-def createCsv(xlsxPath: str, createDir: str, companyId: str) -> None:        
+def createCsv(xlsxPath: str, createDir: str, companyId: str) -> bool:        
     try: 
-
         wb = getXlsxData(xlsxPath)
         sheetList = [*wb]
         
         for i in range(1,4):
+            #시트 순서대로 처리(시트명 고정시 시트명으로 변경)
             if i == 1:
                 csvName = CSV_STORE_FILE_NAME
             elif i == 2:
@@ -238,9 +283,44 @@ def createCsv(xlsxPath: str, createDir: str, companyId: str) -> None:
         return False
 
 
+def getCarIds(fileType: str,companyId:str) -> list:
+    
+    result = {}
+    
+    path = f'{CSV_PATH}/{getTypeToFolder(fileType)}/{companyId}_car.csv'
+    csvData = pd.read_csv(path, index_col = None, header = None)
+    
+    #점포, 차량id 취득(nan 값 제외)
+    carIdList = csvData[[1,3]].dropna().values.tolist()
+    
+    for item in carIdList[SKIP_ROWS:]:
+        clientId = item[1] if fileType == USED_CAR_TYPE else companyId
+        carId = item[0]
+        
+        result[carId] = clientId
+        
+    return result
+
+def imageCopy(folderName, companyId, fileType):
+    carIds = getCarIds(fileType, companyId)
+    for carId, client in carIds.items():
+        imageList = getFilePath(folderName,f'**/{carId}/*')
+        
+        if len(imageList) < 1:
+            continue
+        
+        pathLists = ['/'.join(item.split('/')[:-1]) for item in imageList]
+        pathListSet = set(pathLists)
+        if len(pathListSet) > 1:
+            print('処理失敗[イメージパス修復（車輌ID）]：' + ' '.join(pathListSet)) 
+            continue
+        
+        copy_tree(pathLists[0], f'{IMAGE_PATH}/{companyId}/{client}/{carId}')
+    
 # 메인로직 
 if __name__ == "__main__":
     
+    print('start')
     createOriginalDir()
     
     for folderName in getFolderList():
@@ -255,22 +335,34 @@ if __name__ == "__main__":
                 fileType =list(companyIds.keys())[0]
                 fileName = fileList[0]
                 companyId = companyIds[fileType]
-                convertPath = getXlsxFilePath(folderName,fileName)
-                createCsv(convertPath, getTypeToFolder(fileType), companyId)
+                
+                xlsxPath = getXlsxFilePath(folderName,fileName)
+                
+                createCsv(xlsxPath, getTypeToFolder(fileType), companyId)
+                
+                #게재점의 경우 종료
+                if (fileType == GOONET_TYPE):
+                    continue
+                
+                imageCopy(folderName, companyId, fileType)
+               
+                    
             else:
                 for fileName in fileList:
                     if '中古' in fileName:
-                        fileType = 1
+                        fileType = USED_CAR_TYPE
                         companyId = companyIds[fileType]
-                        convertPath = getXlsxFilePath(folderName,fileName)
-                        createCsv(convertPath, getTypeToFolder(fileType), companyId)
+                        xlsxPath = getXlsxFilePath(folderName,fileName)
                     elif '新車' in fileName:
-                        fileType = 2 
+                        fileType = NEW_CAR_TYPE
                         companyId = companyIds[fileType]
-                        convertPath = getXlsxFilePath(folderName,fileName)
-                        createCsv(convertPath, getTypeToFolder(fileType), companyId)
+                        xlsxPath = getXlsxFilePath(folderName,fileName)
                     else:
                         print('処理失敗[xlsxファイル名中古新車なし]：' + fileName) 
+                        continue 
+                    
+                    createCsv(xlsxPath, getTypeToFolder(fileType), companyId)
+                    imageCopy(folderName, companyId, fileType)
                
         except:
             print('処理失敗[設定・その他エラー]：' + folderName) 
