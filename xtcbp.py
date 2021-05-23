@@ -8,8 +8,18 @@ import datetime
 XLSX_PATH = './xlsxFiles'
 
 #변환 파일 관련
-CSV_PATH = './' + datetime.date.today().strftime('%y%m%d') + '/Original/csv'
-IMAGE_PATH = './' + datetime.date.today().strftime('%y%m%d') + '/Original/images'
+RUN_DATE = datetime.date.today().strftime('%y%m%d')
+CSV_PATH = './' + RUN_DATE + '/Original/csv'
+IMAGE_PATH = './' + RUN_DATE + '/Original/Images'
+
+USED_CAR_FOLDER = 'UsedCar'
+NEW_CAR_FOLDER = 'NewCar'
+GOONET_FOLDER = 'Goonet'
+
+CSV_STORE_FILE_NAME = '_store'
+CSV_PLAN_FILE_NAME = '_plan'
+CSV_CAR_FILE_NAME = '_car'
+
 
 #설정파일관련
 SET_FILE = './変換設定.xlsx'
@@ -77,62 +87,192 @@ def getFilePath(folderName:str, extension:str = "" ) -> list:
     path = f'{XLSX_PATH}/{folderName}/'
     return [path for path in glob.glob(path + extension) if os.path.isfile(path)] 
 
-# 시트 리스트 취득
+
 def getSheetList(folderName: str, fileName: str) -> list:
+    """xlsx의 시트 리스트 취득(차후 시트명으로 판단하게 될시 필요함)
+    
+    Args:
+        folderName: 폴더명
+        fileName: 취득할 xlsx파일명(.xlsx포함)
+    
+    Returns: 
+        시트명을 리스트로 반환
+    """
+    
     folderPath = f'{XLSX_PATH}/{folderName}'
     xlsxPath = f'{folderPath}/{fileName}'
     
     wb = pd.read_excel(xlsxPath, sheet_name = None, engine='openpyxl')
-    createCsv(CSV_PATH,folderName,wb)    
     return [*wb]
 
-# 회사ID 정보 취득 
-def getCompanyId(folderName: str, fileName: str, fileType: int = 0) -> str:
-    setData = getSetData()    
-    if fileType != 0 :
-        findData = fileName.replace('.xlsx')   
+def getTypeToFolder(fileType: int) -> str:
+    """저장될 폴더 타입을 반환
+    
+    Args: 
+        fileType: 파일 타입(1,2,3)
+        
+    Returns:
+        폴더명 반환
+    """
+    
+    if fileType == 1:
+        result = USED_CAR_FOLDER
+    elif fileType == 2:
+        result = NEW_CAR_FOLDER
+    elif fileType == 3:
+        result = GOONET_FOLDER
     else:
-        result = setData[folderName][0]
-     
+        result = False
+        
     return result
 
-# CSV파일생성
-def createCsv(path: str, fileName: str, data: list) -> None:
-    def createDir():
-        dir = f'{CSV_PATH}/test/123'
-        os.makedirs(dir, exist_ok=True) #옵션으로 이미 존재할때는 넘어감
-    createDir()
-    # data['Sheet1'].to_csv(f'{path}/{fileName}.csv', index=False, encoding='utf-8-sig')    
+def getCompanyIds(folderName: str) -> list:
+    """회사ID 정보 취득 
+    
+    Args:
+        forderName: 파일명
+        
+    Returns:
+        [{타입:회사ID}] 의 형태로 회사ID반환
+    """
+    try:
+        setData = getSetData()    
+        result = setData[folderName]
+    except:
+        result = []
+        
+    return result
 
+
+def createOriginalDir() -> bool:   
+    """변환후 저장 파일 경로 생성
+    """     
+    
+    createDirs = [
+        CSV_PATH + '/' + USED_CAR_FOLDER,
+        CSV_PATH + '/' + NEW_CAR_FOLDER,
+        CSV_PATH + '/' + GOONET_FOLDER,
+        IMAGE_PATH
+    ]
+    
+    try: 
+        for path in createDirs:
+            #CSV 디렉토리 생성
+            os.makedirs(path, exist_ok=True) #옵션으로 이미 존재할때는 넘어감
+        return True
+    except:
+        return False
+  
+ 
+def getXlsxData(path: str) -> dict:
+    """xlsx 데이터 취득
+    
+    Args: 
+        파일 경로
+    
+    Returns:
+        취득된 데이터 정보(DataFrame형태)
+    """
+    
+    wb = pd.read_excel(path, header = None, sheet_name = None, engine='openpyxl')
+    return wb
+
+def getXlsxFilePath(fdn: str, fn: str) -> str:
+    """xlsx 파일 경로 반환
+    
+    Args:
+        fdn: 폴더명
+        fn: 파일명
+        
+    Returns:
+        파일경로
+    """
+    
+    return f'{XLSX_PATH}/{fdn}/{fn}'
+
+def beforeXlsxCheck(fileList: list, companyIds: dict) -> bool:
+    """변환전 xlsx파일 설정과 xlsx파일 개수, 논리확인
+    
+    Args:
+        fileList: 파일 리스트
+        companyIds: 회사 아이디 리스트
+    
+    Returns:
+        에러여부 반환, 에러가 있는경우 True
+    """
+    
+    if len(companyIds) == 0:
+        print('処理失敗[未登録会社]：' + folderName + '/' + ','.join(fileList[:])) 
+        return True
+    
+    if len(fileList) == 0 or len(fileList) > 3:
+        print('処理失敗[xlsxファイル確認必要]：' + folderName + '/' + ','.join(fileList[:])) 
+        return True
+        
+    elif len(fileList) != len(companyIds) :
+        print('処理失敗[xlsxファイル件数相違]：' + folderName + '/' + ','.join(fileList[:])) 
+        return True
+
+    return False
+
+
+# CSV파일생성
+def createCsv(xlsxPath: str, createDir: str, companyId: str) -> None:        
+    try: 
+
+        wb = getXlsxData(xlsxPath)
+        sheetList = [*wb]
+        
+        for i in range(1,4):
+            if i == 1:
+                csvName = CSV_STORE_FILE_NAME
+            elif i == 2:
+                csvName = CSV_PLAN_FILE_NAME
+            elif i == 3:
+                csvName = CSV_CAR_FILE_NAME    
+                
+            wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{companyId}{csvName}.csv', header = None,index = False, encoding = 'utf-8-sig')
+
+        return True
+    except:
+        return False
 
 
 # 메인로직 
 if __name__ == "__main__":
     
+    createOriginalDir()
+    
     for folderName in getFolderList():
         fileList = getXlsxFileList(folderName)
+        companyIds = getCompanyIds(folderName)
+        
+        if beforeXlsxCheck(fileList,companyIds):
+            continue
+        
         try:
-            if len(fileList) == 0:
-                print('処理失敗[xlsxファイルなし]：' + folderName + '/' + fileName) 
-                continue
-            elif len(fileList) == 1:
+            if len(fileList) == 1:
+                fileType =list(companyIds.keys())[0]
                 fileName = fileList[0]
-                companyId = getCompanyId(folderName, fileName)
+                companyId = companyIds[fileType]
+                convertPath = getXlsxFilePath(folderName,fileName)
+                createCsv(convertPath, getTypeToFolder(fileType), companyId)
             else:
                 for fileName in fileList:
-                    fileType = fileName
-                    companyId = getCompanyId(folderName, fileName)
-            
-            
+                    if '中古' in fileName:
+                        fileType = 1
+                        companyId = companyIds[fileType]
+                        convertPath = getXlsxFilePath(folderName,fileName)
+                        createCsv(convertPath, getTypeToFolder(fileType), companyId)
+                    elif '新車' in fileName:
+                        fileType = 2 
+                        companyId = companyIds[fileType]
+                        convertPath = getXlsxFilePath(folderName,fileName)
+                        createCsv(convertPath, getTypeToFolder(fileType), companyId)
+                    else:
+                        print('処理失敗[xlsxファイル名中古新車なし]：' + fileName) 
                
         except:
-            print('処理失敗[設定・その他エラー]：' + folderName + '/' + fileName) 
-            
-        
-        
-            
-        
-        
-        # sheetList = getSheetList(folderName,fileList[0])        
-        
+            print('処理失敗[設定・その他エラー]：' + folderName) 
+                    
     
