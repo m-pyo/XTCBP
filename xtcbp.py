@@ -179,7 +179,7 @@ def printLog(msg: str) -> None:
     
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     logTime = f'[{now}] '
-    f = open(f'{LOGS_PATH}/{RUN_DATE}.txt', 'a')
+    f = open(f'{LOGS_PATH}/{RUN_DATE}.txt', 'a', encoding = 'utf8')
     f.write(logTime + msg + '\n')
     f.close()
 
