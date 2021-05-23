@@ -381,8 +381,8 @@ if __name__ == "__main__":
         except:
             printLog('処理失敗[設定・その他エラー]：' + folderName) 
         
-        print('END')
-        os.system('Pause')
+    print('END')
+    os.system('Pause')
 
 
                     
