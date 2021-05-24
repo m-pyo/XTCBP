@@ -22,9 +22,9 @@ USED_CAR_TYPE = 1
 NEW_CAR_TYPE = 2
 GOONET_TYPE = 3
 
-CSV_STORE_FILE_NAME = '_store'
-CSV_PLAN_FILE_NAME = '_plan'
-CSV_CAR_FILE_NAME = '_car'
+CSV_STORE_FILE_NAME = 'store'
+CSV_PLAN_FILE_NAME = 'plan'
+CSV_CAR_FILE_NAME = 'car'
 
 SKIP_ROWS = 2  # 차량 정보 취득시 생략하는 라인수
 
@@ -288,9 +288,12 @@ def createCsv(xlsxPath: str, createDir: str, companyId: str) -> bool:
             elif i == 2:
                 csvName = CSV_PLAN_FILE_NAME
             elif i == 3:
-                csvName = CSV_CAR_FILE_NAME    
-                
-            wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{companyId}{csvName}.csv', header = None,index = False, encoding = 'utf-8-sig')
+                csvName = CSV_CAR_FILE_NAME
+                 
+            if createDir == GOONET_FOLDER:    
+                wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{csvName}_{companyId}.csv', header = None,index = False, encoding = 'utf-8-sig')
+            else:
+                wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{companyId}_{csvName}.csv', header = None,index = False, encoding = 'utf-8-sig')
 
         return True
     except:
