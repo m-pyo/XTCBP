@@ -399,7 +399,6 @@ if __name__ == "__main__":
     createOriginalDir()
     
     for folderName in getFolderList():
-        ㄴㄴㄴㄴㄴ
         
         fileList = getXlsxFileList(folderName)        
           
