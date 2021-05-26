@@ -30,6 +30,8 @@ SKIP_ROWS = 2  # 차량 정보 취득시 생략하는 라인수
 
 #설정파일관련
 SET_FILE = './変換設定.xlsx'
+KEISAITEN = '掲載店'
+CONV_EXTENSION = '.xlsm'
 
 #로그파일 관련
 LOGS_PATH = './logs'
@@ -70,13 +72,13 @@ def getXlsxFileList(folderName: str) -> list:
         folderName: 폴더명
         
     Returns:
-       .xlsx 형식의 파일 리스트   
+       지정형식의 파일 리스트   
     """
     
     path = f'{XLSX_PATH}/{folderName}'
     
     try:
-        result = [fileName for fileName in os.listdir(path) if fileName.endswith('.xlsx')] 
+        result = [fileName for fileName in os.listdir(path) if fileName.endswith(CONV_EXTENSION)] 
     except:
         printLog('処理失敗:' +  folderName)
         result = []
@@ -104,7 +106,7 @@ def getSheetList(folderName: str, fileName: str) -> list:
     
     Args:
         folderName: 폴더명
-        fileName: 취득할 xlsx파일명(.xlsx포함)
+        fileName: 취득할 엑셀 파일명(.xlsx포함)
     
     Returns: 
         시트명을 리스트로 반환
@@ -183,8 +185,6 @@ def printLog(msg: str) -> None:
     f.write(logTime + msg + '\n')
     f.close()
 
-
- 
 def getXlsxData(path: str) -> dict:
     """xlsx 데이터 취득
     
@@ -257,6 +257,7 @@ def beforeXlsxCheck(fileList: list, companyIds: dict) -> bool:
         companyIds: 회사 아이디 리스트
     
     Returns:
+        게재점의 경우 개수 제한 x
         에러여부 반환, 에러가 있는경우 True
     """
     
@@ -264,7 +265,11 @@ def beforeXlsxCheck(fileList: list, companyIds: dict) -> bool:
         printLog('処理失敗[未登録会社]：' + folderName + '/' + ','.join(fileList[:])) 
         return True
     
-    if len(fileList) == 0 or len(fileList) > 3:
+    if len(fileList) == 0:
+        printLog('処理失敗[xlsxファイルなし]：' + folderName + '/' + ','.join(fileList[:])) 
+        return True
+    
+    if len(fileList) > 3:
         printLog('処理失敗[xlsxファイル確認必要]：' + folderName + '/' + ','.join(fileList[:])) 
         return True
         
@@ -274,9 +279,9 @@ def beforeXlsxCheck(fileList: list, companyIds: dict) -> bool:
 
     return False
 
-
-# CSV파일생성
-def createCsv(xlsxPath: str, createDir: str, companyId: str) -> bool:        
+def createCsv(xlsxPath: str, createDir: str, fileName: str) -> bool:    
+    """csv 파일 생성함수
+    """    
     try: 
         wb = getXlsxData(xlsxPath)
         sheetList = [*wb]
@@ -291,9 +296,9 @@ def createCsv(xlsxPath: str, createDir: str, companyId: str) -> bool:
                 csvName = CSV_CAR_FILE_NAME
                  
             if createDir == GOONET_FOLDER:    
-                wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{csvName}_{companyId}.csv', header = None,index = False, encoding = 'utf-8-sig')
+                wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{csvName}_{fileName}.csv', header = None,index = False, encoding = 'utf-8-sig')
             else:
-                wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{companyId}_{csvName}.csv', header = None,index = False, encoding = 'utf-8-sig')
+                wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{fileName}_{csvName}.csv', header = None,index = False, encoding = 'utf-8-sig')
 
         return True
     except:
@@ -301,7 +306,8 @@ def createCsv(xlsxPath: str, createDir: str, companyId: str) -> bool:
 
 
 def getCarIds(fileType: str,companyId:str) -> list:
-    
+    """차량 아이디 취득
+    """
     result = {}
     
     path = f'{CSV_PATH}/{getTypeToFolder(fileType)}/{companyId}_car.csv'
@@ -318,7 +324,16 @@ def getCarIds(fileType: str,companyId:str) -> list:
         
     return result
 
-def imageCopy(folderName, companyId, fileType):
+def imageCopy(folderName: str, companyId: str, fileType: str):
+    """이미지 복사로직
+        Args
+            folderName:
+            companyId:
+            fileType:
+        returns
+            없음
+    """
+    
     carIds = getCarIds(fileType, companyId)
     for carId, client in carIds.items():
         imageList = getFilePath(folderName,f'**/{carId}/*')
@@ -334,6 +349,49 @@ def imageCopy(folderName, companyId, fileType):
         
         copy_tree(pathLists[0], f'{IMAGE_PATH}/{companyId}/{client}/{carId}')
     
+def playerConvLogic(folderName: str, fileList: list, companyIds: dict) -> None:
+    """ 게재점 변환 처리 로직
+    
+    Args: 
+        forderName: 폴더명
+        fileList: 파일리스트
+        companyIds: 회사아이디
+    """
+                   
+    if len(fileList) == 1:
+        fileType =list(companyIds.keys())[0]
+        fileName = fileList[0]
+        companyId = companyIds[fileType]
+        
+        xlsxPath = getXlsxFilePath(folderName, fileName)
+        
+        createCsv(xlsxPath, getTypeToFolder(fileType), companyId)
+        
+        #게재점의 경우 종료
+        if (fileType == GOONET_TYPE):
+            return
+        
+        imageCopy(folderName, companyId, fileType)
+    
+            
+    else:
+        for fileName in fileList:
+            if '中古' in fileName:
+                fileType = USED_CAR_TYPE
+                companyId = companyIds[fileType]
+                xlsxPath = getXlsxFilePath(folderName,fileName)
+            elif '新車' in fileName:
+                fileType = NEW_CAR_TYPE
+                companyId = companyIds[fileType]
+                xlsxPath = getXlsxFilePath(folderName,fileName)
+            else:
+                printLog('処理失敗[xlsxファイル名中古新車なし]：' + fileName) 
+                continue 
+            
+            createCsv(xlsxPath, getTypeToFolder(fileType), companyId)
+            imageCopy(folderName, companyId, fileType)
+    
+    
 # 메인로직 
 if __name__ == "__main__":
     
@@ -341,52 +399,30 @@ if __name__ == "__main__":
     createOriginalDir()
     
     for folderName in getFolderList():
-        fileList = getXlsxFileList(folderName)
-        companyIds = getCompanyIds(folderName)
         
-        if beforeXlsxCheck(fileList,companyIds):
-            continue
-        
+        fileList = getXlsxFileList(folderName)        
+          
         try:
-            if len(fileList) == 1:
-                fileType =list(companyIds.keys())[0]
-                fileName = fileList[0]
-                companyId = companyIds[fileType]
-                
-                xlsxPath = getXlsxFilePath(folderName,fileName)
-                
-                createCsv(xlsxPath, getTypeToFolder(fileType), companyId)
-                
-                #게재점의 경우 종료
-                if (fileType == GOONET_TYPE):
+            if folderName == KEISAITEN:
+                fileType = 3
+                if len(fileList) == 0:
+                    printLog('処理失敗[xlsxファイルなし]：' + folderName + '/' + ','.join(fileList[:])) 
                     continue
-                
-                imageCopy(folderName, companyId, fileType)
-               
-                    
-            else:
+
                 for fileName in fileList:
-                    if '中古' in fileName:
-                        fileType = USED_CAR_TYPE
-                        companyId = companyIds[fileType]
-                        xlsxPath = getXlsxFilePath(folderName,fileName)
-                    elif '新車' in fileName:
-                        fileType = NEW_CAR_TYPE
-                        companyId = companyIds[fileType]
-                        xlsxPath = getXlsxFilePath(folderName,fileName)
-                    else:
-                        printLog('処理失敗[xlsxファイル名中古新車なし]：' + fileName) 
-                        continue 
-                    
-                    createCsv(xlsxPath, getTypeToFolder(fileType), companyId)
-                    imageCopy(folderName, companyId, fileType)
+                    xlsxPath = getXlsxFilePath(folderName,fileName)
+                    convFileName = xlsxPath.split('/')[-1].replace(CONV_EXTENSION,'')
+                    createCsv(xlsxPath, getTypeToFolder(fileType), convFileName)
+                continue
+            
+            else: 
+                companyIds = getCompanyIds(folderName)
+                if beforeXlsxCheck(fileList, companyIds):
+                    continue    
+                playerConvLogic(folderName, fileList, companyIds)
                
         except:
-            printLog('処理失敗[設定・その他エラー]：' + folderName) 
+            printLog(f'処理失敗[設定・その他エラー]： {folderName}') 
         
     print('END')
     os.system('Pause')
-
-
-                    
-    
