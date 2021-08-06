@@ -6,13 +6,12 @@ import openpyxl
 
 from distutils.dir_util import copy_tree
 
-#대상파일 위치
-XLSX_PATH = './xlsxFiles'
+RESULT_FILE_PATH = './xlsxFiles'
 
 #변환 파일 관련
 RUN_DATE = datetime.date.today().strftime('%y%m%d')
-CSV_PATH = './' + RUN_DATE + '/Original/csv'
-IMAGE_PATH = './' + RUN_DATE + '/Original/Images'
+CSV_PATH = './csv/' + RUN_DATE + '/Original/csv'
+IMAGE_PATH = './csv/' + RUN_DATE + '/Original/Images'
 
 USED_CAR_FOLDER = 'UsedCar'
 NEW_CAR_FOLDER = 'NewCar'
@@ -30,11 +29,26 @@ SKIP_ROWS = 2  # 차량 정보 취득시 생략하는 라인수
 
 #설정파일관련
 SET_FILE = './変換設定.xlsx'
-KEISAITEN = '掲載店'
-CONV_EXTENSION = '.xlsm'
+KEISAITEN = '999999_掲載店様テンプレート'
+CONV_EXTENSION_XLSM = '.xlsm'
+CONV_EXTENSION_XLSX = '.xlsx'
 
 #로그파일 관련
 LOGS_PATH = './logs'
+
+def refFilePath():
+  f = open("path", 'r',encoding = 'utf8' )
+  result = f.readline()
+  f.close()
+
+  if not result :
+    result = RESULT_FILE_PATH
+    
+  return result
+
+#대상파일 위치
+XLSX_PATH = refFilePath()
+
 
 def getSetData() -> dict:
     """설정파일의 내용을 취득
@@ -78,7 +92,7 @@ def getXlsxFileList(folderName: str) -> list:
     path = f'{XLSX_PATH}/{folderName}'
     
     try:
-        result = [fileName for fileName in os.listdir(path) if fileName.endswith(CONV_EXTENSION)] 
+        result = [fileName for fileName in os.listdir(path) if fileName.endswith((CONV_EXTENSION_XLSM, CONV_EXTENSION_XLSX))] 
     except:
         printLog('処理失敗:' +  folderName)
         result = []
@@ -279,7 +293,7 @@ def beforeXlsxCheck(fileList: list, companyIds: dict) -> bool:
 
     return False
 
-def createCsv(xlsxPath: str, createDir: str, fileName: str) -> bool:    
+def createCsv(xlsxPath: str, createDir: str, fileName: str, folderName = '') -> bool:    
     """csv 파일 생성함수
     """    
     try: 
@@ -296,21 +310,21 @@ def createCsv(xlsxPath: str, createDir: str, fileName: str) -> bool:
                 csvName = CSV_CAR_FILE_NAME
                  
             if createDir == GOONET_FOLDER:    
-                wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{csvName}_{fileName}.csv', header = None,index = False, encoding = 'utf-8-sig')
+                wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{csvName}_{fileName}[掲載店].csv', header = None,index = False, encoding = 'utf-8-sig')
             else:
-                wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{fileName}_{csvName}.csv', header = None,index = False, encoding = 'utf-8-sig')
+                wb[sheetList[i]].to_csv(f'{CSV_PATH}/{createDir}/{fileName}_{csvName}[{folderName}].csv', header = None,index = False, encoding = 'utf-8-sig')
 
         return True
     except:
         return False
 
 
-def getCarIds(fileType: str,companyId:str) -> list:
+def getCarIds(folderName:str, fileType: str, companyId:str) -> list:
     """차량 아이디 취득
     """
     result = {}
     
-    path = f'{CSV_PATH}/{getTypeToFolder(fileType)}/{companyId}_car.csv'
+    path = f'{CSV_PATH}/{getTypeToFolder(fileType)}/{companyId}_car[{folderName}].csv'
     csvData = pd.read_csv(path, index_col = None, header = None)
     
     #점포, 차량id 취득(nan 값 제외)
@@ -334,7 +348,7 @@ def imageCopy(folderName: str, companyId: str, fileType: str):
             없음
     """
     
-    carIds = getCarIds(fileType, companyId)
+    carIds = getCarIds(folderName, fileType, companyId)
     for carId, client in carIds.items():
         imageList = getFilePath(folderName,f'**/{carId}/*')
         
@@ -342,7 +356,12 @@ def imageCopy(folderName: str, companyId: str, fileType: str):
             continue
         
         pathLists = ['/'.join(item.split('/')[:-1]) for item in imageList]
+
+        pathLists = [item for item in pathLists if 'バックアップ' not in item] 
+          
+            
         pathListSet = set(pathLists)
+
         if len(pathListSet) > 1:
             printLog('処理失敗[イメージパス修復（車輌ID）]：' + ' '.join(pathListSet)) 
             continue
@@ -357,7 +376,6 @@ def playerConvLogic(folderName: str, fileList: list, companyIds: dict) -> None:
         fileList: 파일리스트
         companyIds: 회사아이디
     """
-                   
     if len(fileList) == 1:
         fileType =list(companyIds.keys())[0]
         fileName = fileList[0]
@@ -365,7 +383,7 @@ def playerConvLogic(folderName: str, fileList: list, companyIds: dict) -> None:
         
         xlsxPath = getXlsxFilePath(folderName, fileName)
         
-        createCsv(xlsxPath, getTypeToFolder(fileType), companyId)
+        createCsv(xlsxPath, getTypeToFolder(fileType), companyId, folderName = folderName)
         
         #게재점의 경우 종료
         if (fileType == GOONET_TYPE):
@@ -388,7 +406,7 @@ def playerConvLogic(folderName: str, fileList: list, companyIds: dict) -> None:
                 printLog('処理失敗[xlsxファイル名中古新車なし]：' + fileName) 
                 continue 
             
-            createCsv(xlsxPath, getTypeToFolder(fileType), companyId)
+            createCsv(xlsxPath, getTypeToFolder(fileType), companyId, folderName = folderName)
             imageCopy(folderName, companyId, fileType)
     
     
@@ -411,7 +429,7 @@ if __name__ == "__main__":
 
                 for fileName in fileList:
                     xlsxPath = getXlsxFilePath(folderName,fileName)
-                    convFileName = xlsxPath.split('/')[-1].replace(CONV_EXTENSION,'')
+                    convFileName = xlsxPath.split('/')[-1].replace(CONV_EXTENSION_XLSM,'').replace(CONV_EXTENSION_XLSX,'')
                     createCsv(xlsxPath, getTypeToFolder(fileType), convFileName)
                 continue
             
@@ -420,7 +438,9 @@ if __name__ == "__main__":
                 if beforeXlsxCheck(fileList, companyIds):
                     continue    
                 playerConvLogic(folderName, fileList, companyIds)
-               
+          
+            print(folderName,' 処理終了')
+
         except:
             printLog(f'処理失敗[設定・その他エラー]： {folderName}') 
         
